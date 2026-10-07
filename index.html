@@ -40,11 +40,14 @@ body.god .m.priv,body.god .m .th{display:block}
 .m span{white-space:pre-line}
 .m.sys.rules{align-self:stretch;text-align:left;font-size:13px;line-height:1.8;color:var(--ink);border:1px solid var(--line)}
 .vg{align-self:center;width:min(340px,100%)}
+.heat{border-collapse:collapse;font-size:11px;margin:4px 0}.heat td,.heat th{padding:2px 6px;text-align:center;border:1px solid var(--line)}
 .m.mine{border-left:3px solid var(--c);padding:4px 0 4px 12px;background:rgba(232,176,74,.08);max-width:92%}
 .pl.me{background:rgba(232,176,74,.15)}
 .pl.me em{display:inline}
 #hp{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:2px solid var(--amber);padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));z-index:5}
 #hp[hidden]{display:none}
+#nx{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:6;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#nx[hidden]{display:none}
 #hp>*{max-width:820px;margin-inline:auto}
 #hp .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 #hp input{flex:1;min-width:0}
@@ -57,7 +60,9 @@ body.god .m.priv,body.god .m .th{display:block}
 <h1>AI人狼 <span>月夜の村</span></h1>
 <p class="sub">Gemini が騙し合う7〜13人の村。霊媒師・オオカミの味方・きつねも登場。</p>
 <section class="cfg">
- <label class="full">Gemini APIキー<input id="key" type="password" placeholder="AIza..." autocomplete="off"></label>
+ <label class="full" id="lkey">Gemini APIキー<input id="key" type="password" placeholder="AIza..." autocomplete="off"></label>
+ <label class="full" id="lproxy">プロキシURL (Cloudflare Workers。入れるとAPIキーは不要)<input id="proxy" placeholder="https://werewolf-gemini-proxy.xxxx.workers.dev"></label>
+ <label class="full">アクセストークン (任意。プロキシで設定した場合のみ)<input id="ptoken" type="password" autocomplete="off"></label>
  <label>モデル<input id="model" list="ml" value="gemini-3.5-flash-lite"><datalist id="ml"><option>gemini-3.5-flash-lite</option><option>gemini-3.8-flash</option><option>gemini-3.1-pro-preview</option></datalist></label>
  <label>議論ラウンド数<select id="rounds"><option>1</option><option selected>2</option><option>3</option></select></label>
  <label>API呼出間隔 (ms)<input id="gap" type="number" value="1200" step="100" min="0"></label>
@@ -65,31 +70,59 @@ body.god .m.priv,body.god .m .th{display:block}
  <label>あなたの名前<input id="myname" placeholder="あなた" maxlength="8"></label>
  <label class="chk full"><input id="rnd" type="checkbox" checked>キャラの名前・性格をGeminiで毎回ランダム生成 (3.5 Flash-Lite固定)</label>
  <label class="chk"><input id="god" type="checkbox">神視点 (役職と本音を表示)</label>
- <label class="chk full"><input id="rem" type="checkbox">APIキーをこのブラウザに保存する</label>
+ <label class="chk full"><input id="rem" type="checkbox">APIキー・トークンをこのブラウザに保存する</label>
+ <label>オオカミだけ別モデル<input id="wmodel" list="ml" placeholder="空欄=共通"></label>
  <label>村の人数<select id="size"><option value="7">7人 (オオカミ2)</option><option value="9">9人 (+霊媒師・オオカミの味方)</option><option value="13">13人 (+きつね・オオカミ3)</option></select></label>
  <label class="chk"><input id="tts" type="checkbox">発言を読み上げる</label>
  <label class="chk"><input id="strm" type="checkbox" checked>発言をストリーミング表示</label>
  <label class="chk"><input id="rev" type="checkbox" checked>終了後に感想戦</label>
- <div class="btns"><button id="go">ゲーム開始</button><button id="stop" class="sec" disabled>中止</button></div>
+ <label class="chk"><input id="kid" type="checkbox">こどもモード (ひらがな・やさしいことば)</label>
+ <label class="chk"><input id="step" type="checkbox">ステップ実行 (発言ごとに「次へ」で進める)</label>
+ <div class="btns"><button id="go">ゲーム開始</button><button id="stop" class="sec" disabled>中止</button><button id="save" class="sec">ログ保存</button></div>
 </section>
 <div id="players"></div>
 <div id="status"></div>
 <main id="log"></main>
 <div id="hp" hidden></div>
+<button id="nx" hidden>次へ ▶</button>
 </div>
 <script>
 const $=s=>document.querySelector(s),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const RJ={wolf:'オオカミ',seer:'占い師',knight:'騎士',vil:'村人',medium:'霊媒師',mad:'オオカミの味方',fox:'きつね'};
+const RJ_N={...RJ},RJ_KID={wolf:'おおかみ',seer:'うらないし',knight:'まもりやく',vil:'むらびと',medium:'しらべやく',mad:'おおかみのなかま',fox:'きつね'};
+let KID=false;
+const STRATS_KID=['こっそり みんなに あわせて、うたがわれないようにする','うらないしの ふりをして、ちがうことを いう','だれかを おおかみだと いいはって、みんなを まよわせる'];
+const KIDCAST=[['あきら','げんきで やさしい'],['みさき','おちついていて ものしり'],['げんた','おちょうしものだけど するどい'],['ゆい','おとなしくて よくみている'],['そうた','はっきり ものをいう'],['はるか','みんなの はなしを まとめたがる'],['たくみ','ちょっとクールで しずか'],['さくら','おっとりしている'],['りょう','こえが おおきくて げんき'],['なな','かずが すき ものしり'],['かいと','おもしろくて にぎやか'],['まゆ','しんぱいしょうで かくにんする'],['じん','ことばが すくなくて するどい']];
+const KID_DESC={wolf:'よるに なかまと そうだんして、いたずらする あいてを きめる。むらびとの ふりを する',seer:'よるに ひとり うらなって、おおかみか どうか しる',knight:'よるに じぶんいがいの ひとりを まもる。いたずらされても だいじょうぶ',medium:'まえのひに おうちにかえった ひとが おおかみだったか しる',mad:'おおかみチームの かちを めざす。おおかみが だれかは しらない',fox:'どっちの チームでもない。いたずらされても へいき。うらなわれると おやすみに なる',vil:'とくべつな ちからは ない。おはなしと とうひょうで むらを まもる'};
+const KR=[[/第0夜 — 初日の夜/g,'さいしょの よる'],[/第(\d+)夜/g,'$1にちめの よる'],[/第(\d+)日/g,'$1にちめ'],[/(\d+)日目/g,'$1にちめ'],[/(\d+)巡目/g,'$1まわりめ'],[/(\d+)巡/g,'$1まわり'],[/(?<!\d)1人/g,'ひとり'],[/(?<!\d)2人/g,'ふたり'],[/(\d+)人/g,'$1にん']];
+const KD=[['キャラ生成に失敗したため、標準キャラを使います。','じゅんびに しっぱいしたので、ふつうの なかまを つかいます。'],['発言を入力 (空欄で沈黙)','はなすことを かいてね'],['同票のため、抽選で','おなじかずなので、くじびきで'],['これまでの流れを踏まえて','ここまでの ながれを ふまえて'],
+['追放された人','おうちにかえったひと'],['追放したい人','おうちにかえってほしいひと'],['全員追放する','ぜんいん おうちにかえす'],['追放されました','おうちにかえりました'],['追放された','おうちにかえった'],['追放','おうちにかえす'],
+['姿が見えなくなっています','すがたが みえなくなっています'],['村に残っている人','むらに のこっている ひと'],['村に残っていれば','むらに のこっていれば'],['いなくなった人','いなくなった ひと'],['観戦席に移りました','みる せきに うつりました'],['神視点','ぜんぶ みえる モード'],['観戦','みる'],['以降','これから'],
+['感想を述べています','おはなしを しています'],['感想戦','おはなしの じかん'],['感想','かんそう'],['参謀に聞く','ヒントを きく'],['参謀','ヒント'],['助言','ヒント'],
+['占い結果','うらないの けっか'],['占い師','うらないし'],['占う','うらなう'],['初日の朝','さいしょの あさ'],['初日','さいしょ'],['今夜','こんや'],['相手','あいて'],['選んでください','えらんでね'],['選ばれました','えらばれました'],['選んで','えらんで'],['自分以外','じぶんいがい'],['自分','じぶん'],
+['見守る','まもる'],['見守り','まもり'],['ねらう候補','いたずらしたい あいて'],['ねらわれても','いたずらされても'],['ねらう','いたずらする'],['今回の作戦','こんかいの さくせん'],['作戦','さくせん'],['仲間','なかま'],
+['村人陣営','むらびとチーム'],['陣営','チーム'],['村人','むらびと'],['村','むら'],['残っている','のこっている'],['残り','のこり'],['人間','にんげん'],['全員','みんな'],['無事','ぶじ'],
+['投票結果','とうひょうの けっか'],['投票','とうひょう'],['結果','けっか'],['勝利','かち'],['役職','やくわり'],['配られました','くばられました'],['紛れ込んだ','まぎれこんだ'],
+['議論フェーズ','はなしあい'],['発言してください','はなしてね'],['発言','はなす'],['沈黙','だまる'],['生成中','つくっています'],['中止しています','とめています'],['停止','とまりました'],['再試行中','もういちど やっています'],['終了','おわり'],['退場','おやすみ'],['考え中','かんがえちゅう'],['次へ','つぎへ'],['の番','のばん'],['の番です','のばんです'],['朝','あさ'],['昼','ひる'],['夜','よる'],['人','ひと']].sort((a,b)=>b[0].length-a[0].length);
+function kid(s){
+ if(!KID||!s)return s;s=String(s);
+ for(const [r,t] of KR)s=s.replace(r,t);
+ for(const [a,b] of KD)s=s.split(a).join(b);
+ return s.replace(/[\u30A1-\u30F6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+}
 const ROLESETS={7:'wolf wolf seer knight vil vil vil',9:'wolf wolf seer knight medium mad vil vil vil',13:'wolf wolf wolf seer knight medium mad fox vil vil vil vil vil'};
 const STRATS=['潜伏型: 目立たず村の流れに同調し、疑われないことを最優先する','占い師騙り型: 序盤に占い師を名乗り、偽の占い結果を出して票を誘導する','偽の黒出し型: 特定の村人をオオカミと断定し、攻撃的に票を集める'];
 const CAST=[['アキラ','快活で押しが強いリーダー気質'],['ミサキ','冷静で論理的、根拠を重視する'],['ゲンタ','お調子者だが勘が鋭い'],['ユイ','慎重で控えめ、矛盾をよく見ている'],['ソウタ','疑り深く直球で追及する'],['ハルカ','穏やかで皆の意見をまとめたがる'],['タクミ','皮肉屋でクール、情報を小出しにする'],['サクラ','おっとりしているが核心を突く'],['リョウ','体育会系で声が大きく勢い任せ'],['ナナ','データと確率で語りたがる'],['カイト','陽気で冗談が多く場を和ませる'],['マユ','心配性で何度も確認を取る'],['ジン','寡黙で、発言は短く鋭い']];
+// ▼ ここにCloudflare WorkerのURLを入れると固定されます (例: https://werewolf-gemini-proxy.xxxx.workers.dev)
+// 固定すると、APIキー欄とプロキシURL欄は画面から消え、アクセストークンだけ任意で入力できます
+const PROXY_URL='https://ai-api.ryopc.org/';
 const LITE='gemini-3.5-flash-lite';
-let P=[],L=[],run=false,day=0,morning='',H=null,hcancel=null,lastExec=null;
+let P=[],L=[],run=false,day=0,morning='',H=null,hcancel=null,lastExec=null,nextRes=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const shuf=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
-const alive=()=>P.filter(p=>p.alive),byName=n=>P.find(p=>p.name===n),status=t=>$('#status').textContent=t;
+const alive=()=>P.filter(p=>p.alive),byName=n=>P.find(p=>p.name===n),status=t=>$('#status').textContent=kid(t);
 
-try{const k=localStorage.getItem('gk');if(k){$('#key').value=k;$('#rem').checked=true}}catch{}
+try{const k=localStorage.getItem('gk');if(k){$('#key').value=k;$('#rem').checked=true}const t=localStorage.getItem('gt');if(t)$('#ptoken').value=t}catch{}
 $('#god').onchange=e=>document.body.classList.toggle('god',e.target.checked);
 
 function renderP(){
@@ -98,6 +131,7 @@ function renderP(){
 }
 function add(cls,p,text,th){
  if(cls==='priv'&&p&&p.human){cls='mine';th=null}
+ if(KID){text=kid(text);th=kid(th)}
  const d=document.createElement('div');d.className='m '+cls;
  if(p){d.style.setProperty('--c',p.color);d.innerHTML=`<b>${p.name}</b><span>${esc(text)}</span>`+(th?`<div class="th">💭 ${esc(th)}</div>`:'')}
  else d.textContent=text;
@@ -111,10 +145,12 @@ async function gem(sys,user,mdl,onText){
  if(/^gemini-3/.test(model))gc.thinkingConfig={thinkingLevel:'low'};
  const mk=()=>JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:gc});
  let body=mk();
- const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${onText?'streamGenerateContent?alt=sse&':'generateContent?'}key=${encodeURIComponent(key)}`;
+ const px=(PROXY_URL||$('#proxy').value).trim().replace(/\/+$/,''),tk=$('#ptoken').value.trim();
+ const url=`${px||'https://generativelanguage.googleapis.com'}/v1beta/models/${encodeURIComponent(model)}:${onText?'streamGenerateContent?alt=sse':'generateContent'}${px?'':`${onText?'&':'?'}key=${encodeURIComponent(key)}`}`;
+ const hd={'Content-Type':'application/json',...(px&&tk?{'x-access-token':tk}:{})};
  for(let i=0;i<5;i++){
   if(!run)throw new Error('中止しました');
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body});
+  const r=await fetch(url,{method:'POST',headers:hd,body});
   if(r.ok){
    let t='';
    const pick=j=>(j.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('');
@@ -130,6 +166,7 @@ async function gem(sys,user,mdl,onText){
   }
   if(r.status==429||r.status>=500){status(`レート制限/一時エラー(${r.status})。再試行中…`);await sleep([5,10,20,30,40][i]*1000);continue}
   const e=await r.json().catch(()=>({}));
+  if(r.status===401&&px){const t=$('#ptoken');t.scrollIntoView({block:'center'});t.focus();throw new Error('アクセストークンが必要です (または違います)。「アクセストークン」欄に入力してください。')}
   if(r.status==400&&gc.thinkingConfig){delete gc.thinkingConfig;body=mk();continue}
   throw new Error(`API ${r.status}: ${e.error?.message||'不明なエラー'}`);
  }
@@ -144,7 +181,7 @@ function sysP(p){
 ${p.notes.length?'【あなただけが知る情報】\n'+p.notes.join('\n'):''}
 ルール: 夜にオオカミは1人をねらう、占い師は1人を占い(オオカミか人間かが分かる)、騎士は自分以外の1人を見守る、霊媒師は前日に追放された人がオオカミだったかを知る。オオカミの味方は人間扱いだがオオカミ陣営の勝利を目指す(オオカミが誰かは知らない)。きつねは第三陣営で、ねらわれても退場しないが、占われると力を失って退場する。昼は議論後に投票で1人を追放。オオカミが全滅すれば村人陣営の勝ち、オオカミの数が人間(オオカミの味方・きつねを含む)の数以上ならオオカミ陣営の勝ち。ただしきつねが村に残っていれば、どちらの場合もきつねの勝ち。
 方針: 村人陣営は発言の矛盾や投票からオオカミを推理する。オオカミ・オオカミの味方は嘘や役職騙りも使う。占い師・騎士・霊媒師は適切なタイミングで役職を明かしてよい。自分の役職や秘密情報を不用意に誤って述べないこと。あなたの発言は全員に公開される。thoughtは他人に見えない本音。
-出力は指定されたJSONのみ。日本語で、キャラクターの口調を保つこと。言葉づかいは穏やかに保ち、暴力的・過激な表現は避けること。`;
+出力は指定されたJSONのみ。日本語で、キャラクターの口調を保つこと。言葉づかいは穏やかに保ち、暴力的・過激な表現は避けること。${KID?'\n【こどもモード】小さな子にもわかるよう、ひらがなだけで、みじかく、やさしいことばで話すこと。漢字・カタカナ・むずかしい言葉・こわい言葉は使わない。うたがうときも「ちょっとへんだな」のようにやわらかく言うこと。':''}`;
 }
 function ctx(){
  const dead=P.filter(p=>!p.alive).map(p=>p.name).join('、')||'なし';
@@ -152,7 +189,7 @@ function ctx(){
 }
 function human0(task,cands){
  return new Promise((res,rej)=>{
-  const box=$('#hp'),q=esc(task.split('JSON:')[0].trim());
+  const box=$('#hp'),q=esc(kid(task.split('JSON:')[0].trim()));
   const done=v=>{hcancel=null;box.hidden=true;box.innerHTML='';res(v)};
   hcancel=()=>{hcancel=null;box.hidden=true;box.innerHTML='';rej(new Error('中止しました'))};
   box.hidden=false;
@@ -168,9 +205,10 @@ function human0(task,cands){
 }
 async function act(p,task,cands,live){
  if(p.human){status(`あなた (${p.name}) の番です`);return await human(task,cands)}
+ if(!cands)await stepWait(`${p.name}の番`);
  await sleep(+$('#gap').value||0);
  status(`${p.name} が考え中…`);
- const r=(await gem(sysP(p),`${ctx()}\n\n【あなたの番】${task}`,0,live))||{};
+ const r=(await gem(sysP(p),`${ctx()}\n\n【あなたの番】${task}`,(p.role==='wolf'&&$('#wmodel').value.trim())||0,live))||{};
  if(cands&&!cands.includes(r.target))r.target=cands[Math.random()*cands.length|0];
  return r;
 }
@@ -220,8 +258,9 @@ async function discuss(){
   const al=alive(),off=(day+r)%al.length;
   for(const p of [...al.slice(off),...al.slice(0,off)]){
    const b=p.human?null:bubble(p);
-   const o=await act(p,`議論フェーズ(${r}/${R}巡目)。これまでの流れを踏まえて発言してください。JSON: {"thought":"本音と戦略","say":"公開発言(100字以内)"}`,null,b&&b.live);
+   const o=await act(p,`議論フェーズ(${r}/${R}巡目)。これまでの流れを踏まえて発言してください。JSON: {"thought":"本音と戦略","say":"公開発言(100字以内)","suspicion":{"名前":0から100の数値}}。suspicionには、村に残っている自分以外の全員について、その人がオオカミだと思う度合いを入れてください。`,null,b&&b.live);
    b?b.fin(o.say||'……',o.thought):pub(p,o.say||'……',o.thought);
+   if(o.suspicion&&typeof o.suspicion==='object')p.sus=o.suspicion;
   }
  }
 }
@@ -240,6 +279,20 @@ async function vote(){
  const t=byName(top[Math.random()*top.length|0]);
  if(top.length>1)pub(null,`同票のため、抽選で${t.name}さんが選ばれました。`);
  t.alive=false;lastExec=t;pub(null,`🕊️ ${t.name}さんが追放されました。`);renderP();
+}
+function drawHeat(){
+ const al=alive().filter(p=>!p.human&&p.sus);if(!al.length)return;
+ const tg=alive(),col=v=>`rgba(208,96,90,${Math.min(1,Math.max(0,(+v||0)/100))*.85})`;
+ const rows=al.map(o=>`<tr><th style="color:${o.color}">${esc(o.name.slice(0,3))}</th>${tg.map(t=>t===o?'<td>―</td>':`<td style="background:${col(o.sus[t.name])}">${Math.round(+o.sus[t.name]||0)}</td>`).join('')}</tr>`).join('');
+ const d=document.createElement('div');d.className='m priv';
+ d.innerHTML=`<div class="th" style="display:block">📊 疑われ度 (行=見る人 / 列=見られる人)</div><table class="heat"><tr><th></th>${tg.map(t=>`<th style="color:${t.color}">${esc(t.name.slice(0,3))}</th>`).join('')}</tr>${rows}</table>`;
+ $('#log').append(d);
+}
+function saveLog(){
+ if(!L.length){status('保存できるログがありません');return}
+ const roles=run?'(ゲーム中のため非表示)':P.map(p=>`${p.name}=${RJ[p.role]}${p.alive?'':'(退場)'}`).join(', ');
+ const md=`# AI人狼ログ\n\n- 日時: ${new Date().toLocaleString('ja-JP')}\n- モデル: ${$('#model').value}\n- 役職: ${roles}\n\n`+L.map(e=>`${e.day}日目 ${e.who?'**'+e.who+'**: ':''}${e.text}`).join('\n\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));a.download='werewolf-log.md';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 function drawVotes(al,pairs){
  const n=al.length,pos={};
@@ -261,21 +314,30 @@ function bubble(p){
  const d=document.createElement('div');d.className='m msg';d.style.setProperty('--c',p.color);
  d.innerHTML=`<b>${esc(p.name)}</b><span>…</span>`;$('#log').append(d);
  const sp=d.querySelector('span'),sc=()=>d.scrollIntoView({block:'end'});
- return{live:t=>{const m=t.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)/);if(m){sp.textContent=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"');sc()}},
-  fin:(text,th)=>{sp.textContent=text;if(th)d.insertAdjacentHTML('beforeend',`<div class="th">💭 ${esc(th)}</div>`);L.push({day,who:p.name,text});speak(p,text);sc()}};
+ return{live:t=>{const m=t.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)/);if(m){sp.textContent=kid(m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"'));sc()}},
+  fin:(text,th)=>{sp.textContent=kid(text);if(th)d.insertAdjacentHTML('beforeend',`<div class="th">💭 ${esc(kid(th))}</div>`);L.push({day,who:p.name,text});speak(p,text);sc()}};
 }
 function human(task,cands){
  const pr=human0(task,cands),ab=document.createElement('button');
- ab.className='sec';ab.textContent='💡参謀に聞く';
+ ab.className='sec';ab.textContent=kid('💡参謀に聞く');
  ab.onclick=async()=>{ab.disabled=true;try{const r=await gem(sysP(H),`${ctx()}\n\n【依頼】あなたはこのプレイヤーの参謀AIです。今の状況で最も疑うべき(または信頼すべき)相手と理由を助言してください。プレイヤー本人が知らない情報は使わないこと。JSON: {"advice":"100字以内の助言"}`);add('sys',0,'💡参謀: '+(r?.advice||'助言を得られませんでした'))}catch(e){status('参謀エラー: '+e.message)}ab.disabled=false};
- $('#hp .row').append(ab);return pr;
+ $('#hp .row').append(ab);if(KID){$('#hp').querySelectorAll('button:not([data-n])').forEach(b=>{if(b!==ab)b.textContent=kid(b.textContent)});const i=$('#hin');if(i)i.placeholder=kid(i.placeholder)}return pr;
+}
+function stepWait(label){
+ if(!$('#step').checked)return Promise.resolve();
+ return new Promise((res,rej)=>{
+  const b=$('#nx');b.hidden=false;b.textContent=kid(`次へ ▶ (${label})`);
+  const fin=()=>{hcancel=null;nextRes=null;b.hidden=true;res()};
+  nextRes=fin;b.onclick=fin;
+  hcancel=()=>{hcancel=null;nextRes=null;b.hidden=true;rej(new Error('中止しました'))};
+ });
 }
 async function review(){
  add('night',0,'💬 感想戦');
  const roles=P.map(p=>`${p.name}=${RJ[p.role]}`).join('、');
  for(const p of P){
   if(p.human)continue;
-  status(`${p.name} が感想を述べています…`);
+  await stepWait(`${p.name}の感想`);status(`${p.name} が感想を述べています…`);
   const r=await gem(sysP(p),`${ctx()}\n\n【感想戦】ゲームは終了しました。全員の役職: ${roles}。自分の最大の判断ミス、または他人の嘘をいつ見抜けた/見抜けなかったかを、キャラの口調で80字以内で語ってください。JSON: {"thought":"本音","say":"感想"}`);
   add('msg',p,r?.say||'……',r?.thought);
   await sleep(+$('#gap').value||0);
@@ -283,25 +345,28 @@ async function review(){
 }
 
 async function genCast(N){
- if(!$('#rnd').checked)return CAST.slice(0,N);
+ const KC=KID?KIDCAST:CAST;
+ if(!$('#rnd').checked)return KC.slice(0,N);
  status('Gemini 3.5 Flash-Lite がキャラクターを生成中…');
- const r=await gem('あなたは人狼ゲームのキャラクター設計者です。出力はJSONのみ。',`人狼ゲームの参加者${N}人分のキャラクターを作ってください。名前は日本人の下の名前で、読みやすい2〜4文字のカタカナまたはひらがな(全員異なる)。性格は口調や議論の癖が分かる25字以内の説明で、全員が明確に異なること。毎回違う顔ぶれにすること。JSON: {"players":[{"name":"...","persona":"..."}]}`,LITE);
+ const r=await gem('あなたは人狼ゲームのキャラクター設計者です。出力はJSONのみ。',`人狼ゲームの参加者${N}人分のキャラクターを作ってください。${KID?'名前はひらがな2〜4文字(全員異なる)。性格はひらがなだけの15字以内のやさしい説明で、全員が明確に異なること。':'名前は日本人の下の名前で、読みやすい2〜4文字のカタカナまたはひらがな(全員異なる)。性格は口調や議論の癖が分かる25字以内の説明で、全員が明確に異なること。'}毎回違う顔ぶれにすること。JSON: {"players":[{"name":"...","persona":"..."}]}`,LITE);
  const a=r?.players;
  if(Array.isArray(a)&&a.length>=N){
   const c=a.slice(0,N).map(x=>[String(x?.name||'').trim(),String(x?.persona||'').trim()]);
-  if(c.every(x=>x[0]&&x[1]&&x[0].length<=8)&&new Set(c.map(x=>x[0])).size===N)return c;
+  if(c.every(x=>x[0]&&x[1]&&x[0].length<=8&&(!KID||/^[\u3041-\u3096ー]+$/.test(x[0])))&&new Set(c.map(x=>x[0])).size===N)return c;
  }
- add('sys',0,'キャラ生成に失敗したため、標準キャラを使います。');return CAST.slice(0,N);
+ add('sys',0,'キャラ生成に失敗したため、標準キャラを使います。');return KC.slice(0,N);
 }
 const RULE_DESC={wolf:'夜に仲間と相談して1人をねらう。正体を隠して村人のふりをする',seer:'夜に1人を占い、オオカミかどうかを知る',knight:'夜に自分以外の1人を見守り、ねらわれても守る',medium:'前日に追放された人がオオカミだったかを知る',mad:'人間扱いだが、オオカミ陣営の勝利を目指す(オオカミが誰かは知らない)',fox:'どちらの陣営でもない。ねらわれても退場しないが、占われると力を失って退場する',vil:'特別な力はない。話し合いと投票で村を守る'};
 function showRules(){
  const cnt={};P.forEach(x=>cnt[x.role]=(cnt[x.role]||0)+1);
  const ks=['wolf','seer','knight','medium','mad','fox','vil'].filter(k=>cnt[k]);
+ if(KID){add('sys rules',0,['📜 ルール',`■ むらの なかま (${P.length}にん)`,...ks.map(k=>`・${RJ[k]} ×${cnt[k]}: ${KID_DESC[k]}`),'■ 1にちの ながれ','あさ: よるの あいだに いなくなった ひとを おしらせ',`ひる: みんなで おはなし (${$('#rounds').value}まわり)`,'とうひょう: いちばん あやしい ひとを ひとり えらぶ (おなじかずは くじびき)','よる: やくわりごとに こっそり うごく (さいしょの よるは うらないだけ)','■ かちかた','むらびとチーム: おおかみを ぜんいん おうちにかえす','おおかみチーム: おおかみが のこりの ひとと おなじか おおくなる',...(cnt.fox?['きつね: むらに のこっていれば、どっちが かっても かち']:[])].join('\n'));return}
  add('sys rules',0,['📜 ルール',`■ 村の構成 (${P.length}人)`,...ks.map(k=>`・${RJ[k]} ×${cnt[k]}: ${RULE_DESC[k]}`),
   '■ 1日の流れ','朝: 夜の間に姿が見えなくなった人を発表',`昼: 全員で話し合い (${$('#rounds').value}巡)`,'投票: いちばん怪しい人を1人追放 (同票は抽選)','夜: 役職ごとにこっそり行動 (初日の夜は占いだけ)',
   '■ 勝利条件','村人陣営: オオカミを全員追放する','オオカミ陣営: オオカミの数が、残りの人の数以上になる',...(cnt.fox?['きつね: 村に残っていれば、勝った陣営にかかわらず勝ち']:[])].join('\n'));
 }
 async function main(){
+ KID=$('#kid').checked;Object.assign(RJ,KID?RJ_KID:RJ_N);
  L=[];day=0;lastExec=null;$('#log').innerHTML='';H=null;window.speechSynthesis?.cancel();
  const N=+$('#size').value,roles=shuf(ROLESETS[N].split(' ')),cast=await genCast(N);
  P=cast.map(([name,persona],i)=>({name,persona,role:roles[i],alive:true,notes:[],div:[],color:`hsl(${i*360/N+15|0},70%,68%)`,pitch:.6+(i*3%5)*.25,rate:.95+(i%3)*.12}));
@@ -313,7 +378,7 @@ async function main(){
  }
  $('#god').disabled=!!H;
  if(H){$('#god').checked=false;document.body.classList.remove('god')}
- const wolves=P.filter(p=>p.role==='wolf'),ws=wolves.map(p=>p.name),st=shuf(STRATS);
+ const wolves=P.filter(p=>p.role==='wolf'),ws=wolves.map(p=>p.name),st=shuf(KID?STRATS_KID:STRATS);
  wolves.forEach((p,i)=>{p.notes.push(`仲間のオオカミ: ${ws.filter(n=>n!==p.name).join('、')}`);p.notes.push(`今回の作戦: ${st[i%st.length]}`)});
  renderP();
  showRules();
@@ -324,15 +389,15 @@ async function main(){
   day++;document.body.classList.add('day');
   add('night',0,`第${day}日`);pub(null,morning);
   let w=winner();if(w)return w;
-  await discuss();await vote();
+  await discuss();drawHeat();await stepWait('投票へ');await vote();
   w=winner();if(w)return w;
-  await night(false);
+  await stepWait('夜へ');await night(false);
   w=winner();if(w){day++;pub(null,morning);return w}
  }
 }
 $('#go').onclick=async()=>{
- if(!$('#key').value.trim()){status('APIキーを入力してください。');return}
- try{$('#rem').checked?localStorage.setItem('gk',$('#key').value.trim()):localStorage.removeItem('gk')}catch{}
+ if(!PROXY_URL&&!$('#key').value.trim()&&!$('#proxy').value.trim()){status('APIキーまたはプロキシURLを入力してください。');return}
+ try{if($('#rem').checked){localStorage.setItem('gk',$('#key').value.trim());localStorage.setItem('gt',$('#ptoken').value.trim())}else{localStorage.removeItem('gk');localStorage.removeItem('gt')}}catch{}
  run=true;$('#go').disabled=true;$('#stop').disabled=false;
  try{
   const w=await main();
@@ -342,6 +407,13 @@ $('#go').onclick=async()=>{
  }catch(e){status('停止: '+e.message)}
  run=false;$('#go').disabled=false;$('#stop').disabled=true;$('#god').disabled=false;
 };
+$('#save').onclick=saveLog;
+if(PROXY_URL){$('#lkey').style.display='none';$('#lproxy').style.display='none'}
+$('#step').onchange=()=>{if(!$('#step').checked&&nextRes)nextRes()};
+document.addEventListener('keydown',e=>{if(!$('#nx').hidden&&nextRes&&(e.key==='Enter'||e.key===' '||e.key==='ArrowRight')){e.preventDefault();nextRes()}});
+const SET=['model','rounds','gap','size','me','myname','wmodel','proxy'],CHK=['tts','strm','rev','kid','rnd','step'];
+try{const j=JSON.parse(localStorage.getItem('gset')||'{}');SET.forEach(i=>j[i]!=null&&($('#'+i).value=j[i]));CHK.forEach(i=>j[i]!=null&&($('#'+i).checked=j[i]))}catch{}
+document.querySelector('.cfg').addEventListener('change',()=>{try{const j={};SET.forEach(i=>j[i]=$('#'+i).value);CHK.forEach(i=>j[i]=$('#'+i).checked);localStorage.setItem('gset',JSON.stringify(j))}catch{}});
 $('#stop').onclick=()=>{run=false;status('中止しています…');window.speechSynthesis?.cancel();hcancel&&hcancel()};
 </script>
 </body>
