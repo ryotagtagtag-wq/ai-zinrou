@@ -37,6 +37,15 @@ body.god .pl em{display:inline}
 .m .th{display:none;color:var(--mute);font-size:12px;margin-top:2px}
 .m.priv{display:none;color:var(--mute);font-size:13px}
 body.god .m.priv,body.god .m .th{display:block}
+.m span{white-space:pre-line}
+.m.mine{border-left:3px solid var(--c);padding:4px 0 4px 12px;background:rgba(232,176,74,.08);max-width:92%}
+.pl.me{background:rgba(232,176,74,.15)}
+.pl.me em{display:inline}
+#hp{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:2px solid var(--amber);padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));z-index:5}
+#hp[hidden]{display:none}
+#hp>*{max-width:820px;margin-inline:auto}
+#hp .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+#hp input{flex:1;min-width:0}
 @media(max-width:520px){.cfg{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){body{transition:none}}
 </style>
@@ -47,9 +56,12 @@ body.god .m.priv,body.god .m .th{display:block}
 <p class="sub">Gemini 7人が騙し合う。人狼2・占い師1・騎士1・村人3。</p>
 <section class="cfg">
  <label class="full">Gemini APIキー<input id="key" type="password" placeholder="AIza..." autocomplete="off"></label>
- <label>モデル<input id="model" list="ml" value="gemini-3.8-flash"><datalist id="ml"><option>gemini-3.8-flash</option><option>gemini-3.5-flash-lite</option><option>gemini-3.1-pro-preview</option></datalist></label>
+ <label>モデル<input id="model" list="ml" value="gemini-3.5-flash-lite"><datalist id="ml"><option>gemini-3.5-flash-lite</option><option>gemini-3.8-flash</option><option>gemini-3.1-pro-preview</option></datalist></label>
  <label>議論ラウンド数<select id="rounds"><option>1</option><option selected>2</option><option>3</option></select></label>
  <label>API呼出間隔 (ms)<input id="gap" type="number" value="1200" step="100" min="0"></label>
+ <label>あなたの参加<select id="me"><option value="">観戦のみ</option><option value="1">1席に参加する</option></select></label>
+ <label>あなたの名前<input id="myname" placeholder="あなた" maxlength="8"></label>
+ <label class="chk full"><input id="rnd" type="checkbox" checked>キャラの名前・性格をGeminiで毎回ランダム生成 (3.5 Flash-Lite固定)</label>
  <label class="chk"><input id="god" type="checkbox">神視点 (役職と本音を表示)</label>
  <label class="chk full"><input id="rem" type="checkbox">APIキーをこのブラウザに保存する</label>
  <div class="btns"><button id="go">ゲーム開始</button><button id="stop" class="sec" disabled>中止</button></div>
@@ -57,12 +69,14 @@ body.god .m.priv,body.god .m .th{display:block}
 <div id="players"></div>
 <div id="status"></div>
 <main id="log"></main>
+<div id="hp" hidden></div>
 </div>
 <script>
 const $=s=>document.querySelector(s),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const RJ={wolf:'人狼',seer:'占い師',knight:'騎士',vil:'村人'};
 const CAST=[['アキラ','快活で押しが強いリーダー気質'],['ミサキ','冷静で論理的、根拠を重視する'],['ゲンタ','お調子者だが勘が鋭い'],['ユイ','慎重で控えめ、矛盾をよく見ている'],['ソウタ','疑り深く直球で追及する'],['ハルカ','穏やかで皆の意見をまとめたがる'],['タクミ','皮肉屋でクール、情報を小出しにする']];
-let P=[],L=[],run=false,day=0,morning='';
+const LITE='gemini-3.5-flash-lite';
+let P=[],L=[],run=false,day=0,morning='',H=null,hcancel=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const shuf=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
 const alive=()=>P.filter(p=>p.alive),byName=n=>P.find(p=>p.name===n),status=t=>$('#status').textContent=t;
@@ -70,8 +84,12 @@ const alive=()=>P.filter(p=>p.alive),byName=n=>P.find(p=>p.name===n),status=t=>$
 try{const k=localStorage.getItem('gk');if(k){$('#key').value=k;$('#rem').checked=true}}catch{}
 $('#god').onchange=e=>document.body.classList.toggle('god',e.target.checked);
 
-function renderP(){$('#players').innerHTML=P.map(p=>`<span class="pl ${p.alive?'':'dead'}" style="--c:${p.color}">${p.name}<em>${RJ[p.role]}</em></span>`).join('')}
+function renderP(){
+ $('#players').innerHTML=P.map(p=>`<span class="pl ${p.alive?'':'dead'} ${p.human?'me':''}" style="--c:${p.color}" title="${esc(p.persona)}">${esc(p.name)}${p.human?'(あなた)':''}<em>${RJ[p.role]}</em></span>`).join('');
+ if(H&&!H.alive&&!H.out){H.out=1;$('#god').disabled=false;$('#god').checked=true;document.body.classList.add('god');add('sys',0,'あなたは脱落しました。以降は神視点で観戦できます。')}
+}
 function add(cls,p,text,th){
+ if(cls==='priv'&&p&&p.human){cls='mine';th=null}
  const d=document.createElement('div');d.className='m '+cls;
  if(p){d.style.setProperty('--c',p.color);d.innerHTML=`<b>${p.name}</b><span>${esc(text)}</span>`+(th?`<div class="th">💭 ${esc(th)}</div>`:'')}
  else d.textContent=text;
@@ -79,8 +97,8 @@ function add(cls,p,text,th){
 }
 function pub(p,text,th){L.push({day,who:p?p.name:'',text});add(p?'msg':'sys',p,text,th)}
 
-async function gem(sys,user){
- const key=$('#key').value.trim(),model=$('#model').value.trim()||'gemini-3.8-flash';
+async function gem(sys,user,mdl){
+ const key=$('#key').value.trim(),model=mdl||$('#model').value.trim()||LITE;
  const gc={temperature:1,responseMimeType:'application/json'};
  if(/^gemini-3/.test(model))gc.thinkingConfig={thinkingLevel:'low'};
  let body=JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:gc});
@@ -111,7 +129,24 @@ function ctx(){
  const dead=P.filter(p=>!p.alive).map(p=>p.name).join('、')||'なし';
  return `【現在】${day}日目 / 生存者: ${alive().map(p=>p.name).join('、')} / 死亡者: ${dead}\n【公開ログ】\n${L.slice(-70).map(e=>`(${e.day}日目) ${e.who?e.who+': ':''}${e.text}`).join('\n')||'(まだなし)'}`;
 }
+function human(task,cands){
+ return new Promise((res,rej)=>{
+  const box=$('#hp'),q=esc(task.split('JSON:')[0].trim());
+  const done=v=>{hcancel=null;box.hidden=true;box.innerHTML='';res(v)};
+  hcancel=()=>{hcancel=null;box.hidden=true;box.innerHTML='';rej(new Error('中止しました'))};
+  box.hidden=false;
+  if(cands){
+   box.innerHTML=`<div>${q}</div><div class="row">${cands.map(n=>`<button class="sec" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+   box.querySelectorAll('button').forEach(b=>b.onclick=()=>done({target:b.dataset.n}));
+  }else{
+   box.innerHTML=`<div>${q}</div><div class="row"><input id="hin" maxlength="200" placeholder="発言を入力 (空欄で沈黙)"><button id="hsend">発言</button></div>`;
+   const go=()=>done({say:$('#hin').value.trim()||'……'});
+   $('#hsend').onclick=go;$('#hin').onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing)go()};$('#hin').focus();
+  }
+ });
+}
 async function act(p,task,cands){
+ if(p.human){status(`あなた (${p.name}) の番です`);return await human(task,cands)}
  await sleep(+$('#gap').value||0);
  status(`${p.name} が考え中…`);
  const r=(await gem(sysP(p),`${ctx()}\n\n【あなたの番】${task}`))||{};
@@ -182,13 +217,35 @@ async function vote(){
  t.alive=false;pub(null,`⚖️ ${t.name}さんが処刑されました。`);renderP();
 }
 
+async function genCast(){
+ if(!$('#rnd').checked)return CAST;
+ status('Gemini 3.5 Flash-Lite がキャラクターを生成中…');
+ const r=await gem('あなたは人狼ゲームのキャラクター設計者です。出力はJSONのみ。',`人狼ゲームの参加者7人分のキャラクターを作ってください。名前は日本人の下の名前で、読みやすい2〜4文字のカタカナまたはひらがな(全員異なる)。性格は口調や議論の癖が分かる25字以内の説明で、全員が明確に異なること。毎回違う顔ぶれにすること。JSON: {"players":[{"name":"...","persona":"..."}]}`,LITE);
+ const a=r?.players;
+ if(Array.isArray(a)&&a.length>=7){
+  const c=a.slice(0,7).map(x=>[String(x?.name||'').trim(),String(x?.persona||'').trim()]);
+  if(c.every(x=>x[0]&&x[1]&&x[0].length<=8)&&new Set(c.map(x=>x[0])).size===7)return c;
+ }
+ add('sys',0,'キャラ生成に失敗したため、標準キャラを使います。');return CAST;
+}
 async function main(){
+ L=[];day=0;$('#log').innerHTML='';H=null;
+ const cast=await genCast();
  const roles=shuf(['wolf','wolf','seer','knight','vil','vil','vil']);
- P=CAST.map(([name,persona],i)=>({name,persona,role:roles[i],alive:true,notes:[],div:[],color:`hsl(${i*51+15},70%,68%)`}));
+ P=cast.map(([name,persona],i)=>({name,persona,role:roles[i],alive:true,notes:[],div:[],color:`hsl(${i*51+15},70%,68%)`}));
+ if($('#me').value){
+  H=P[Math.random()*P.length|0];H.human=true;H.persona='';
+  let nm=$('#myname').value.trim()||'あなた';
+  while(P.some(x=>x!==H&&x.name===nm))nm+='★';
+  H.name=nm;
+ }
+ $('#god').disabled=!!H;
+ if(H){$('#god').checked=false;document.body.classList.remove('god')}
  const ws=P.filter(p=>p.role==='wolf').map(p=>p.name);
  P.forEach(p=>{if(p.role==='wolf')p.notes.push(`仲間の人狼: ${ws.filter(n=>n!==p.name).join('')}`)});
- L=[];day=0;$('#log').innerHTML='';renderP();
+ renderP();
  add('sys',0,'村に人狼が紛れ込んだ…。役職が配られました。');
+ if(H)add('mine',H,`あなたの役職は【${RJ[H.role]}】です。`+(H.notes.length?'\n'+H.notes.join('\n'):''));
  await night(true);
  while(true){
   day++;document.body.classList.add('day');
@@ -211,9 +268,9 @@ $('#go').onclick=async()=>{
   add('sys',0,'役職: '+P.map(p=>`${p.name}=${RJ[p.role]}`).join(' / '));
   $('#god').checked=true;document.body.classList.add('god');status('ゲーム終了');
  }catch(e){status('停止: '+e.message)}
- run=false;$('#go').disabled=false;$('#stop').disabled=true;
+ run=false;$('#go').disabled=false;$('#stop').disabled=true;$('#god').disabled=false;
 };
-$('#stop').onclick=()=>{run=false;status('中止しています…')};
+$('#stop').onclick=()=>{run=false;status('中止しています…');hcancel&&hcancel()};
 </script>
 </body>
 </html>
