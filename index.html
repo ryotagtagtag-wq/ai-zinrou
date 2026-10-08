@@ -115,7 +115,7 @@ const STRATS=['潜伏型: 目立たず村の流れに同調し、疑われない
 const CAST=[['アキラ','快活で押しが強いリーダー気質'],['ミサキ','冷静で論理的、根拠を重視する'],['ゲンタ','お調子者だが勘が鋭い'],['ユイ','慎重で控えめ、矛盾をよく見ている'],['ソウタ','疑り深く直球で追及する'],['ハルカ','穏やかで皆の意見をまとめたがる'],['タクミ','皮肉屋でクール、情報を小出しにする'],['サクラ','おっとりしているが核心を突く'],['リョウ','体育会系で声が大きく勢い任せ'],['ナナ','データと確率で語りたがる'],['カイト','陽気で冗談が多く場を和ませる'],['マユ','心配性で何度も確認を取る'],['ジン','寡黙で、発言は短く鋭い']];
 // ▼ ここにCloudflare WorkerのURLを入れると固定されます (例: https://werewolf-gemini-proxy.xxxx.workers.dev)
 // 固定すると、APIキー欄とプロキシURL欄は画面から消え、アクセストークンだけ任意で入力できます
-const PROXY_URL='https://ai-api.ryopc.org/';
+const PROXY_URL='https://api.ryopc.f5.si';
 const LITE='gemini-3.5-flash-lite';
 let P=[],L=[],run=false,day=0,morning='',H=null,hcancel=null,lastExec=null,nextRes=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
