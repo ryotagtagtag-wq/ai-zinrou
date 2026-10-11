@@ -22,3 +22,7 @@ src/worker/index-html.js
 .DS_Store
 .idea/
 .vscode/
+*.bak
+*.new
+*.bak*
+*.new*

@@ -12,3 +12,9 @@ yarn-error.log*
 # OSの一時ファイル
 .DS_Store
 Thumbs.db
+
+index-html.js
+*.bak
+*.new
+*.bak*
+*.new*

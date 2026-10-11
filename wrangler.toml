@@ -1,0 +1,23 @@
+name = "ai-zinrou"
+workers_dev = false
+main = "src/worker/worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# 公開するなら、自分のページのオリジンに絞る (例: "https://example.pages.dev")
+# file:// で開いて使う場合は "null" を含める。空欄なら全オリジン許可
+ALLOWED_ORIGINS = "https://ai-zinrou.ryopc.org"
+ALLOWED_MODELS = "gemini-3.5-flash-lite"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[ratelimits]]
+name = "LIMITER"
+# namespace_id は Cloudflare ダッシュボードまたは `wrangler rate-limit namespace create <name>` で取得する数値
+# 例: wrangler rate-limit namespace create ai_zinrou_rate_limit
+namespace_id = "1002"
+[ratelimits.simple]
+limit = 20
+period = 60
