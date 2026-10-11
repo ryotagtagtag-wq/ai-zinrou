@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI人狼 — Gemini 7人村</title>
+<title>AI人狼 月夜の村</title>
 <style>
 :root{--bg:#0c1020;--panel:#151b33;--line:#272f53;--ink:#ece9df;--mute:#8e95b2;--amber:#e8b04a;--blood:#d0605a;--day:#f3e3b8}
 *{box-sizing:border-box}
@@ -60,7 +60,7 @@ body.god .m.priv,body.god .m .th{display:block}
 <h1>AI人狼 <span>月夜の村</span></h1>
 <p class="sub">Gemini が騙し合う7〜13人の村。霊媒師・オオカミの味方・きつねも登場。</p>
 <section class="cfg">
- <label class="full" id="lkey">Gemini APIキー<input id="key" type="password" placeholder="AIza..." autocomplete="off"></label>
+
  <label>モデル<input id="model" list="ml" value="gemini-3.5-flash-lite"><datalist id="ml"><option>gemini-3.5-flash-lite</option><option>gemini-3.8-flash</option><option>gemini-3.1-pro-preview</option></datalist></label>
  <label>議論ラウンド数<select id="rounds"><option>1</option><option selected>2</option><option>3</option></select></label>
  <label>API呼出間隔 (ms)<input id="gap" type="number" value="1200" step="100" min="0"></label>
@@ -160,8 +160,6 @@ async function gem(sys,user,mdl,onText){
   if(r.status==400&&gc.thinkingConfig){delete gc.thinkingConfig;body=mk();continue}
   throw new Error(`API ${r.status}: ${e.error?.message||'不明なエラー'}`);
  }
- return null;
-}
  return null;
 }
 
@@ -388,7 +386,7 @@ async function main(){
  }
 }
 $('#go').onclick=async()=>{
-  if(!$('#key').value.trim()){status('APIキーを入力してください。');return}
+
   run=true;$('#go').disabled=true;$('#stop').disabled=false;
   try{
    const w=await main();

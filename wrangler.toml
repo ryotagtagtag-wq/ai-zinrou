@@ -19,5 +19,5 @@ name = "LIMITER"
 # 例: wrangler rate-limit namespace create ai_zinrou_rate_limit
 namespace_id = "1002"
 [ratelimits.simple]
-limit = 20
+limit = 125
 period = 60

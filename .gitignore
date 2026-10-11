@@ -9,6 +9,7 @@ public/index.html
 src/worker/index-html.js
 
 # 秘匿情報・ローカル環境変数
+dev.*
 .dev.vars
 .dev.vars.*
 .env
