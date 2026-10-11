@@ -1,1 +1,24 @@
-a.out
+# 依存関係・ビルド成果物
+node_modules/
+.wrangler/
+dist/
+public/
+
+# 生成物（scripts/build.js が作る。直接編集しない）
+public/index.html
+src/worker/index-html.js
+
+# 秘匿情報・ローカル環境変数
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+!.dev.vars.example
+*.key
+*.pem
+
+# OS・エディタ
+.DS_Store
+.idea/
+.vscode/
